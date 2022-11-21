@@ -1,0 +1,48 @@
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api-app
+  namespace: devops-task
+  labels:
+    app: api
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: api
+  template:
+    metadata:
+      labels:
+        app: api
+    spec:
+      imagePullSecrets:
+      - name: myregistrykey
+      containers:
+      - name: http
+        image: docker.io/piyush02/flask:v1
+        ports:
+         - containerPort: 5000
+        env:
+         - name: SERVE_PORT
+           value: "5000"
+        resources:
+           limits:
+             memory: 300Mi
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: api-service
+  namespace: devops-task
+  labels:
+    app: api
+spec:
+  type: NodePort
+  ports:
+   - port: 30080
+     targetPort: 5000
+  selector:
+    app: api
