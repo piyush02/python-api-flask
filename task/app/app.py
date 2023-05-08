@@ -5,7 +5,7 @@ from flask import Flask, jsonify,abort, make_response, request
 app = Flask(__name__)
 
 
-#####  Temp datastorage #####
+#####  Temp datastorage  this is just for running this code need to replace with sql database#####
 
 tem_db = [
   {
