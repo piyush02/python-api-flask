@@ -22,7 +22,7 @@ Following are the endpoints implemented:
 
 The query endpoint return all configs that satisfy the query argument.
 
-Query example-1:
+Query example:
 
 ```sh
 curl http://config-service/search?metadata.monitoring.enabled=true
@@ -64,21 +64,7 @@ Response example:
 ```
 
 
-#### Schema
 
-- **Config**
-  - Name (string)
-  - Metadata (nested key:value pairs where both key and value are strings of arbitrary length)
-
-### Configuration
-
-application **MUST** serve the API on the port defined by the environment variable `SERVE_PORT`.
-The application **MUST** fail if the environment variable is not defined.
-
-### Deployment
-
-
-The application **MUST** be accessible from outside the minikube cluster.
 
 
 
