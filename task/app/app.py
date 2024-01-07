@@ -1,233 +1,130 @@
 import os
-import sys
-from flask import Flask, jsonify,abort, make_response, request
+from flask import Flask, jsonify, abort, request, g
+import sqlite3
 
 app = Flask(__name__)
 
+DATABASE = 'config_database.db'
 
-#####  Temp datastorage  this is just for running this code need to replace with sql database#####
+def get_db():
+    db = getattr(g, '_database', None)
+    if db is None:
+        db = g._database = sqlite3.connect(DATABASE)
+    return db
 
-tem_db = [
-  {
-    "name": "datacenter-1",
-    "metadata": {
-      "monitoring": {
-        "enabled": "true"
-      },
-      "limits": {
-        "cpu": {
-          "enabled": "false",
-          "value": "300m"
-        }
-      }
-    }
-  },
-  {
-    "name": "datacenter-2",
-    "metadata": {
-      "monitoring": {
-        "enabled": "true"
-      },
-      "limits": {
-        "cpu": {
-          "enabled": "true",
-          "value": "250m"
-        }
-      }
-    }
-  }
-]
-#########check temp_db name #######
+@app.teardown_appcontext
+def close_connection(exception):
+    db = getattr(g, '_database', None)
+    if db is not None:
+        db.close()
 
-def get_temp_db(name):
-    for config in tem_db:
-        if config['name'] == name:
-            return config
+class ConfigDatabase:
+    def __init__(self):
+        self.create_table()
 
-#########search in tem_db name #######
+    def create_table(self):
+        with app.app_context():
+            cursor = get_db().cursor()
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS configs (
+                    name TEXT PRIMARY KEY,
+                    monitoring_enabled TEXT,
+                    cpu_enabled TEXT,
+                    cpu_value TEXT
+                )
+            ''')
+            get_db().commit()
 
-def search_config(name):
+    def get_all_configs(self):
+        with app.app_context():
+            cursor = get_db().cursor()
+            cursor.execute('SELECT * FROM configs')
+            return cursor.fetchall()
 
-    result = []
-    val = str(name.values())
-    key = str(name.keys())
-    #print('1',val,file=sys.stderr)
-    #print(len(val))
-    if len(val) < 18:
-        abort(400)
-    if "dict_keys(['metadata.limits.cpu.enabled'])" == key:
-        flag = 2
-    elif "dict_keys(['metadata.monitoring.enabled'])" == key:
-        flag = 1
-    elif "dict_keys(['name'])" == key:
-        flag = 0
-    else:
-        abort(400)
-    val = val.split('\'')[1]
-  
-   
-    for iteam in tem_db:
-            
-        if iteam['metadata']['limits']['cpu']['enabled'] == val and flag == 2:
-            result.append(iteam)
-        if iteam['metadata']['monitoring']['enabled'] == val and flag == 1:
-            result.append(iteam)   
-        if iteam['name'] == val and flag == 0:
-            result.append(iteam)
+    def get_config(self, name):
+        with app.app_context():
+            cursor = get_db().cursor()
+            cursor.execute('SELECT * FROM configs WHERE name = ?', (name,))
+            return cursor.fetchone()
 
-    return result
+    def create_config(self, config):
+        with app.app_context():
+            cursor = get_db().cursor()
+            cursor.execute('INSERT INTO configs VALUES (?, ?, ?, ?)', 
+                           (config['name'], config['metadata']['monitoring']['enabled'],
+                            config['metadata']['limits']['cpu']['enabled'], config['metadata']['limits']['cpu']['value']))
+            get_db().commit()
 
-#########json_validate #####
+    def update_config(self, config):
+        with app.app_context():
+            cursor = get_db().cursor()
+            cursor.execute('''
+                UPDATE configs
+                SET monitoring_enabled = ?, cpu_enabled = ?, cpu_value = ?
+                WHERE name = ?
+            ''', (config['metadata']['monitoring']['enabled'], config['metadata']['limits']['cpu']['enabled'],
+                  config['metadata']['limits']['cpu']['value'], config['name']))
+            get_db().commit()
 
-def json_validate(name):
-    monitoring = name['metadata']['monitoring']['enabled']
-    cpu_e = name['metadata']['limits']['cpu']['enabled']
-    cpu_v = name['metadata']['limits']['cpu']['value']
-    return monitoring, cpu_e, cpu_v
+    def delete_config(self, name):
+        with app.app_context():
+            cursor = get_db().cursor()
+            cursor.execute('DELETE FROM configs WHERE name = ?', (name,))
+            get_db().commit()
 
-#########check existing record in tem_db name #######
-
-def check_record_exists(name):
-    for config in tem_db:
-        if config['name'] == name:
-            return config
-
-######### GET ########
+config_db = ConfigDatabase()
 
 @app.route('/configs', methods=['GET'])
 def get_configs():
-    return jsonify(tem_db), 200
-
-######### GET LIST ALL ########
+    return jsonify(config_db.get_all_configs()), 200
 
 @app.route('/configs/<string:name>', methods=['GET'])
 def get_config(name):
-    config = get_temp_db(name)
+    config = config_db.get_config(name)
     if not config:
-            abort(404)
+        abort(404)
     return jsonify(config), 200
-
-######## POST #############
 
 @app.route('/configs', methods=['POST'])
 def create_config():
-    #### map json response ####
-    monitoring, cpu_e, cpu_v = json_validate(request.json)
-    name = request.json['name']
-    flag_m = 0
-    flag_e = 0
-   
-   # validate json response #####
-    if not request.json or 'name' not in request.json:
+    config = request.json
+    if not config or 'name' not in config:
         abort(400)
     
-    if check_record_exists(name):
+    existing_config = config_db.get_config(config['name'])
+    if existing_config:
         abort(400)
     
-    if len(name) == 0:
-        abort(400)
-    
-    if len(cpu_v) == 0:
-        #print('3',file=sys.stderr)
-        abort(400)
-    
-    if monitoring == 'true' or monitoring == 'false':
-        #print('1',monitoring,file=sys.stderr)
-        flag_m = 1 
-    if cpu_e == 'true' or cpu_e == 'false':
-        flag_e = 1
-        #print('2',cpu_e,file=sys.stderr)      
-    
-    if flag_m == 1 and flag_e == 1:
-        tem_db.append(request.json)
-        return jsonify(request.json) , 201
-    else:
-        abort(400)
-         
-
-
-###### PUT #########
+    config_db.create_config(config)
+    return jsonify(config), 201
 
 @app.route('/configs/<string:name>', methods=['PUT'])
-def update_config(name):
-    config = get_temp_db(name)
-    print(config, file=sys.stderr)
-    if config is None:
-        abort(404)
+def update_or_create_config(name):
+    existing_config = config_db.get_config(name)
+
     if not request.json:
         abort(400)
-    if not check_record_exists(name):
-        abort(404)
-    #### map json response ####
-    name = request.json['name']
-    monitoring, cpu_e, cpu_v = json_validate(request.json)
-    flag_m = 0
-    flag_e = 0
 
-    # validate json response #####
-    if len(cpu_v) == 0:
-        abort(400)
+    new_config_data = request.json
+    new_config_data['name'] = name  # Ensure the name is set correctly
 
-    if monitoring == 'true' or monitoring == 'false':
-        config['metadata']['monitoring']['enabled'] = monitoring
-        flag_m = 1
-    
-    if cpu_e == 'true' or cpu_e == 'false':
-        flag_e = 1
-    
-    if flag_e == 1 and flag_m == 1:
-        config['metadata']['limits']['cpu']['enabled'] = cpu_e
-        config['metadata']['limits']['cpu']['value'] = cpu_v
-        config['name'] = name
-        return jsonify(config), 200
+    if existing_config:
+        # If the configuration already exists, update it
+        config_db.update_config(new_config_data)
+        return jsonify(new_config_data), 200
     else:
-        abort(400)
-
-
-###### DELETE ########
+        # If the configuration doesn't exist, create a new one
+        config_db.create_config(new_config_data)
+        return jsonify(new_config_data), 201
 
 @app.route('/configs/<string:name>', methods=['DELETE'])
 def delete_config(name):
-    config = get_temp_db(name)
-    if config is None:
+    config = config_db.get_config(name)
+    if not config:
         abort(404)
-    tem_db.remove(config)
-    return jsonify({}), 204      
-
-####### SEARCH ######
-
-@app.route('/search', methods=['GET'])
-def get_search():
-    #print(request.args,file=sys.stderr)
-
-    args = request.args
-    args = args.to_dict()
     
-    config = search_config(args)
-
-    #if config is None:
-    if len(config) == 0:
-        abort(404)
-
-    return jsonify(config), 200
-
-
-### error messages #####
-
-NOT_FOUND = 'Not Found'
-BAD_REQUEST = 'Bad Request'
-
-@app.errorhandler(404)
-def not_found(error):
-        return make_response(jsonify({'error': NOT_FOUND}), 404)
-
-@app.errorhandler(400)
-def bad_request(error):
-        return make_response(jsonify({'error': BAD_REQUEST}), 400)
+    config_db.delete_config(name)
+    return jsonify({}), 204
 
 if __name__ == '__main__':
-        try:
-                if  os.environ['SERVE_PORT']:
-                       app.run(debug=True, host='0.0.0.0', port=int(os.environ['SERVE_PORT']))
-        except Exception as e:
-                print("ERROR: SERVE_PORT not set as an env variable")
+    app.run(debug=True, host='0.0.0.0', port=int(os.environ.get('SERVE_PORT', 5000)))
