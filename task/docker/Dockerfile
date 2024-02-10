@@ -1,10 +1,25 @@
+# Use a lightweight base image
 FROM arm64v8/python:3.9-alpine
-MAINTAINER PIYUSH YADAV "piyush.yadav@live.in"
-COPY . /app
-WORKDIR /app
-RUN pip3 install -r requirements.txt
-EXPOSE 5000
-ENV SERVE_PORT=5000
 
-ENTRYPOINT ["python"]
-CMD ["app.py"]
+# Set environment variables
+ENV PYTHONDONTWRITEBYTECODE 1
+ENV PYTHONUNBUFFERED 1
+ENV SERVE_PORT 5000
+
+# Set the working directory in the container
+WORKDIR /app
+
+# Copy the dependencies file to the working directory
+COPY requirements.txt .
+
+# Install dependencies
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy the current directory contents into the container at /app
+COPY . /app
+
+# Expose port 5000
+EXPOSE 5000
+
+# Command to run the application
+CMD ["python", "app.py"]
